@@ -110,7 +110,7 @@ class DecisionTree:
             node.children[value] = child
         return node
 
-    def fit(self, X, y=None, raw=False):
+    def fit(self, X, y=None):
         # 如果y为None则默认X的最后一列为y
         if y is None:
             y = X[:, -1]
