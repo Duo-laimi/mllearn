@@ -1,3 +1,4 @@
+from abc import abstractmethod, ABC
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -16,7 +17,11 @@ class TreeNode:
     right: 'TreeNode' = field(default=None, init=False)
 
 
-class BaseRegressionTree:
+def sigmoid(x: np.ndarray):
+    return 1 / (1 + np.exp(-x))
+
+
+class BaseTree(ABC):
     def __init__(
             self,
             lmbda: float,
@@ -32,15 +37,12 @@ class BaseRegressionTree:
         self.threshold = threshold
         self.root = None
 
-    def square_sum_error(self, y_true: np.ndarray, y_pred: np.ndarray):
-        return np.sum(np.square(y_true - y_pred))
-
     # y* - y
-    def first_order(self, y_true: np.ndarray, y_pred: np.ndarray):
-        return y_pred - y_true
+    @abstractmethod
+    def first_order(self, y_true: np.ndarray, y_pred: np.ndarray): ...
 
-    def second_order(self, y_true: np.ndarray, y_pred: np.ndarray):
-        return np.ones_like(y_true)
+    @abstractmethod
+    def second_order(self, y_true: np.ndarray, y_pred: np.ndarray): ...
 
     def calculate_pred_value(self, g: np.ndarray, h: np.ndarray):
         return -g.sum() / (h.sum() + self.lmbda)
@@ -65,8 +67,6 @@ class BaseRegressionTree:
             feature_idx: int,
             partition_feature_val: float
     ):
-        # g = self.first_order(y_true, y_pred)
-        # h = self.second_order(y_true, y_pred)
         score1 = self.greedy_score(g, h)
 
         idx_less_eq = np.where(X[:, feature_idx] <= partition_feature_val)
@@ -101,13 +101,9 @@ class BaseRegressionTree:
     def greedy_gain(
             self,
             X: np.ndarray,
-            # y_true: np.ndarray,
-            # y_pred: np.ndarray,
             g: np.ndarray,
             h: np.ndarray
     ):
-        # g = self.first_order(y_true, y_pred)
-        # h = self.second_order(y_true, y_pred)
         feature_idx_list = list(range(X.shape[1]))
         best_feature_idx = 0
         best_feature_val = None
@@ -122,178 +118,7 @@ class BaseRegressionTree:
         return best_feature_idx, best_feature_val, best_feature_gain
 
     def build(self, X: np.ndarray, g: np.ndarray, h: np.ndarray, depth: int):
-        # g = self.first_order(y_true, y_pred)
-        # h = self.second_order(y_true, y_pred)
-        # 边界条件
-        # 样本个数 类别数 损失 深度
         num_samples, _ = X.shape
-        # criterion = self.square_sum_error(y_true, y_pred)
-        # criterion < self.threshold or \
-        if num_samples <= self.min_samples or \
-            depth >= self.max_depth:
-            pred_value = self.calculate_pred_value(g, h)
-            return TreeNode(-1, -1, True, pred_value)
-
-        # 寻找最优划分特征和划分特征值
-        feature_idx, feature_val, feature_gain = self.greedy_gain(X, g, h)
-
-        # gamma理解为最低结构收益
-        if feature_gain < self.gamma:
-            pred_value = self.calculate_pred_value(g, h)
-            return TreeNode(-1, -1, True, pred_value)
-        node = TreeNode(feature_idx, feature_val)
-
-        idx_left = np.where(X[:, feature_idx] <= feature_val)
-        idx_right = np.where(X[:, feature_idx] > feature_val)
-        node.left = self.build(X[idx_left], g[idx_left], h[idx_left], depth + 1)
-        node.right = self.build(X[idx_right], g[idx_right], h[idx_right], depth + 1)
-        return node
-
-    def fit(self, X: np.ndarray, y_true: np.ndarray, y_pred: np.ndarray):
-        g = self.first_order(y_true, y_pred)
-        h = self.second_order(y_true, y_pred)
-        self.root = self.build(X, g, h, 0)
-        return self
-
-    def predict_single(self, x: np.ndarray, node: 'TreeNode'):
-        if node.is_leaf_node:
-            return node.pred_value
-        if x[node.feature_idx] <= node.feature_val:
-            return self.predict_single(x, node.left)
-        else:
-            return self.predict_single(x, node.right)
-
-    def predict(self, X: np.ndarray):
-        pred = []
-        for x in X:
-            pred.append(self.predict_single(x, self.root))
-        return np.array(pred, dtype=np.float32)
-
-class BaseClassifyTree:
-    def __init__(
-            self,
-            lmbda: float,
-            gamma: float,
-            min_samples: int = 2,
-            max_depth: int = 5,
-            threshold: float = 0.01
-    ):
-        """
-        针对分类问题，基于sigmoid函数将求和的值转换为概率，也即 1 / (1 + exp(-\sum x_i))
-        此时的损失函数是bce，也即 - y_true * p_pred - (1 - y_true) * (1 - p_pred)
-        带入计算公式： - y_true * sigmoid(\sum x_i) - (1 - y_true) * (1 - sigmoid(\sum x_i))
-        将 \sum x_i作为整体f(x)，得到 - y_true * sigmoid(f(x)) - (1 - y_true) * (1 - sigmoid(f(x))
-        计算该式的针对f(x)的一阶导和二阶导
-        :param lmbda:
-        :param gamma:
-        :param min_samples:
-        :param max_depth:
-        :param threshold:
-        """
-        self.lmbda = lmbda
-        self.gamma = gamma
-        self.min_samples = min_samples
-        self.max_depth = max_depth
-        self.threshold = threshold
-        self.root = None
-
-    def square_sum_error(self, y_true: np.ndarray, y_pred: np.ndarray):
-        return np.sum(np.square(y_true - y_pred))
-
-    # y* - y
-    def first_order(self, y_true: np.ndarray, y_pred: np.ndarray):
-        return y_pred - y_true
-
-    def second_order(self, y_true: np.ndarray, y_pred: np.ndarray):
-        return np.ones_like(y_true)
-
-    def calculate_pred_value(self, g: np.ndarray, h: np.ndarray):
-        return -g.sum() / (h.sum() + self.lmbda)
-
-    # 越大越好
-    def greedy_score(self, g: np.ndarray, h: np.ndarray):
-        """
-        :param g: 一阶导
-        :param h: 二阶导
-        :return: 当前划分的分数
-        """
-        numerator = np.square(np.sum(g))
-        denominator = 2 * (np.sum(h) + self.lmbda)
-        return numerator / denominator
-
-    # 划分增益
-    def greedy_gain_by_feature_val(
-            self,
-            X: np.ndarray,
-            g: np.ndarray,
-            h: np.ndarray,
-            feature_idx: int,
-            partition_feature_val: float
-    ):
-        # g = self.first_order(y_true, y_pred)
-        # h = self.second_order(y_true, y_pred)
-        score1 = self.greedy_score(g, h)
-
-        idx_less_eq = np.where(X[:, feature_idx] <= partition_feature_val)
-        idx_great = np.where(X[:, feature_idx] > partition_feature_val)
-
-        score2 = self.greedy_score(g[idx_less_eq], h[idx_less_eq])
-        score3 = self.greedy_score(g[idx_great], h[idx_great])
-        return (score2 + score3) - score1
-
-    def greedy_gain_by_feature(
-            self,
-            X: np.ndarray,
-            g: np.ndarray,
-            h: np.ndarray,
-            feature_idx: int
-    ):
-        feature_val_list = list(set(X[:, feature_idx]))
-        feature_val_list = sorted(feature_val_list)
-
-        best_feature_val  = feature_val_list[0]
-        best_feature_gain = -math.inf
-
-        for feature_val in feature_val_list:
-            gain = self.greedy_gain_by_feature_val(X, g, h, feature_idx, feature_val)
-            if gain > best_feature_gain:
-                best_feature_val = feature_val
-                best_feature_gain = gain
-
-        return best_feature_val, best_feature_gain
-
-
-    def greedy_gain(
-            self,
-            X: np.ndarray,
-            # y_true: np.ndarray,
-            # y_pred: np.ndarray,
-            g: np.ndarray,
-            h: np.ndarray
-    ):
-        # g = self.first_order(y_true, y_pred)
-        # h = self.second_order(y_true, y_pred)
-        feature_idx_list = list(range(X.shape[1]))
-        best_feature_idx = 0
-        best_feature_val = None
-        best_feature_gain = -math.inf
-
-        for feature_idx in feature_idx_list:
-            val, gain = self.greedy_gain_by_feature(X, g, h, feature_idx)
-            if gain > best_feature_gain:
-                best_feature_idx = feature_idx
-                best_feature_val = val
-                best_feature_gain = gain
-        return best_feature_idx, best_feature_val, best_feature_gain
-
-    def build(self, X: np.ndarray, g: np.ndarray, h: np.ndarray, depth: int):
-        # g = self.first_order(y_true, y_pred)
-        # h = self.second_order(y_true, y_pred)
-        # 边界条件
-        # 样本个数 类别数 损失 深度
-        num_samples, _ = X.shape
-        # criterion = self.square_sum_error(y_true, y_pred)
-        # criterion < self.threshold or \
         if num_samples <= self.min_samples or \
             depth >= self.max_depth:
             pred_value = self.calculate_pred_value(g, h)
@@ -335,7 +160,32 @@ class BaseClassifyTree:
         return np.array(pred, dtype=np.float32)
 
 
+class RegressionTree(BaseTree):
+    # y* - y
+    def first_order(self, y_true: np.ndarray, y_pred: np.ndarray):
+        return y_pred - y_true
 
+    def second_order(self, y_true: np.ndarray, y_pred: np.ndarray):
+        return np.ones_like(y_true)
+
+
+class BinaryClassifyTree(BaseTree):
+    """
+    针对分类问题，基于sigmoid函数将求和的值转换为概率，也即 1 / (1 + exp(-\sum x_i))
+    此时的损失函数是bce，也即 - y_true * p_pred - (1 - y_true) * (1 - p_pred)
+    带入计算公式： - y_true * sigmoid(\sum x_i) - (1 - y_true) * (1 - sigmoid(\sum x_i))
+    将 \sum x_i作为整体f(x)，得到 - y_true * sigmoid(f(x)) - (1 - y_true) * (1 - sigmoid(f(x))
+    计算该式的针对f(x)的一阶导和二阶导
+    """
+    # y* - y
+    def first_order(self, y_true: np.ndarray, y_pred: np.ndarray):
+        # sigmoid(y_pred) - y_true
+        return sigmoid(y_pred) - y_true
+
+    def second_order(self, y_true: np.ndarray, y_pred: np.ndarray):
+        # sigmoid(x) - y_true
+        # exp(x) / sigmoid(x) ** 2 ->
+        return np.exp(y_pred) / np.pow(sigmoid(y_pred), 2)
 
 class XGBoost:
     def __init__(
@@ -346,7 +196,8 @@ class XGBoost:
             min_samples: int = 2,
             max_depth: int = 10,
             max_trees: int = 10,
-            tree_threshold: float = 0.001
+            tree_threshold: float = 0.001,
+            task: str = "regression"
     ):
 
         self.gamma = gamma
@@ -357,11 +208,14 @@ class XGBoost:
         self.tree_threshold = tree_threshold
         self.learning_rate = learning_rate
         self.trees = []
+        self.base_tree_class = RegressionTree
+        if task == "classification":
+            self.base_tree_class = BinaryClassifyTree
 
     def build(self, X: np.ndarray, y: np.ndarray):
         y_pred = np.zeros_like(y, dtype=np.float32)
         for _ in range(self.max_trees):
-            tree = BaseRegressionTree(self.lmbda, self.gamma, self.min_samples, self.max_depth, self.tree_threshold)
+            tree = self.base_tree_class(self.lmbda, self.gamma, self.min_samples, self.max_depth, self.tree_threshold)
             tree.fit(X, y, y_pred)
             if tree.root.left is None and tree.root.right is None:
                 break
