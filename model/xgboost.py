@@ -238,3 +238,9 @@ class XGBoost:
         return y_pred / len(self.trees)
 
 
+# XGBoost 用于多分类
+# n 条路径，每条路径负责1个类别的预估，记预估值为v_i
+# 将{v_i} 进行 softmax，并计算交叉熵损失
+# 用损失对路径求导
+
+
